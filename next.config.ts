@@ -5,22 +5,35 @@ const nextConfig: NextConfig = {
     unoptimized: true,
     remotePatterns: [
       {
-        protocol: 'https',
-        hostname: 'www.devteam10.org',
-        port: '',
-        pathname: '/files/**',
+        protocol: "https",
+        hostname: "www.devteam10.org",
+        port: "",
+        pathname: "/files/**",
       },
       {
-        protocol: 'https',
-        hostname: 'storage.googleapis.com',
-        port: '',
-        pathname: '/team10_bucket/**',
+        protocol: "https",
+        hostname: "storage.googleapis.com",
+        port: "",
+        pathname: "/team10_bucket/**",
+      },
+      {
+        protocol: "http", // 개발 환경은 http
+        hostname: "localhost",
+        port: "9000", // MinIO 포트
+        pathname: "/dev-bucket/**", // 버킷명
+      },
+      // ===== MinIO 홈서버 (선택사항) =====
+      {
+        protocol: "http",
+        hostname: "118.42.214.23", // 홈서버 IP
+        port: "9000",
+        pathname: "/dev-bucket/**",
       },
     ],
   },
   env: {
-    NEXT_PUBLIC_BACKEND_URL: "https://www.devteam10.org",
-    NEXT_PUBLIC_WEBSOCKET_URL: "wss://www.devteam10.org/chat",
+    NEXT_PUBLIC_BACKEND_URL: "http://localhost:8080/",
+    NEXT_PUBLIC_WEBSOCKET_URL: "http://localhost:8080/chat",
     // 백엔드 주소
     // NEXT_PUBLIC_BACKEND_URL: "http://34.64.160.179:8080",
     // NEXT_PUBLIC_WEBSOCKET_URL: "ws://34.64.160.179:8080/chat",
