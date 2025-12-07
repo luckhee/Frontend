@@ -4,11 +4,15 @@ import axios, {
   AxiosError,
 } from "axios";
 import { ChatMessage, ChatRoom } from "./websocket";
-import { getAccessTokenCookie, clearAccessTokenCookie, clearRefreshTokenCookie } from './cookieUtils';
+import {
+  getAccessTokenCookie,
+  clearAccessTokenCookie,
+  clearRefreshTokenCookie,
+} from "./cookieUtils";
 
 // axios 인스턴스 생성
 const apiClient = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_BACKEND_URL || "https://www.devteam10.org",
+  baseURL: process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080",
   headers: {
     "Content-Type": "application/json",
   },
@@ -32,8 +36,8 @@ apiClient.interceptors.response.use(
       clearAccessTokenCookie();
       clearRefreshTokenCookie();
       // 현재 경로가 로그인 페이지가 아닌 경우에만 리다이렉트
-      if (!window.location.pathname.includes('/login')) {
-        window.location.href = '/login';
+      if (!window.location.pathname.includes("/login")) {
+        window.location.href = "/login";
       }
     }
     return Promise.reject(error);
@@ -104,40 +108,48 @@ export const chatAPI = {
 // 특허 관련 API 함수들
 export const patentAPI = {
   // 최근 등록된 특허 목록 조회
-  getRecentPatents: async (): Promise<Array<{
-    id: number;
-    title: string;
-    description: string;
-    category: string;
-    price: number;
-    status: string;
-    createdAt: string;
-  }>> => {
+  getRecentPatents: async (): Promise<
+    Array<{
+      id: number;
+      title: string;
+      description: string;
+      category: string;
+      price: number;
+      status: string;
+      createdAt: string;
+    }>
+  > => {
     const response = await apiClient.get("/api/posts");
     return response.data.data || response.data;
   },
 
   // 인기 특허 목록 조회
-  getPopularPatents: async (): Promise<Array<{
-    id: number;
-    title: string;
-    description: string;
-    category: string;
-    price: number;
-    status: string;
-    createdAt: string;
-  }>> => {
+  getPopularPatents: async (): Promise<
+    Array<{
+      id: number;
+      title: string;
+      description: string;
+      category: string;
+      price: number;
+      status: string;
+      createdAt: string;
+    }>
+  > => {
     const response = await apiClient.get("/api/posts/popular");
     return response.data.data || response.data;
   },
 
   // 특정 게시글의 파일 목록 조회
-  getPostFiles: async (postId: number): Promise<Array<{
-    id: number;
-    fileName: string;
-    fileUrl: string;
-    fileSize: number;
-  }>> => {
+  getPostFiles: async (
+    postId: number
+  ): Promise<
+    Array<{
+      id: number;
+      fileName: string;
+      fileUrl: string;
+      fileSize: number;
+    }>
+  > => {
     const response = await apiClient.get(`/api/posts/${postId}/files`);
     return response.data.data || [];
   },
@@ -163,7 +175,7 @@ export const memberAPI = {
     currentPassword?: string;
     newPassword?: string;
   }): Promise<void> => {
-    await apiClient.patch('/api/members/me', data);
+    await apiClient.patch("/api/members/me", data);
   },
 
   // 마이페이지 정보 조회
@@ -176,13 +188,13 @@ export const memberAPI = {
     status: string;
     createdAt: string;
   }> => {
-    const response = await apiClient.get('/api/members/me');
+    const response = await apiClient.get("/api/members/me");
     return response.data;
   },
 
   // 회원 탈퇴
   deleteAccount: async (): Promise<void> => {
-    await apiClient.delete('/api/members/me');
+    await apiClient.delete("/api/members/me");
   },
 
   // 회원 확인 (비밀번호 찾기용)
@@ -190,17 +202,20 @@ export const memberAPI = {
     name: string;
     email: string;
   }): Promise<void> => {
-    const response = await fetch(`${apiClient.defaults.baseURL}/api/members/verify-member`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
-    });
+    const response = await fetch(
+      `${apiClient.defaults.baseURL}/api/members/verify-member`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
+      }
+    );
 
     if (!response.ok) {
       const errorData = await response.json();
-      throw new Error(errorData.message || '회원 확인에 실패했습니다.');
+      throw new Error(errorData.message || "회원 확인에 실패했습니다.");
     }
   },
 
@@ -211,17 +226,20 @@ export const memberAPI = {
     newPassword: string;
     confirmPassword: string;
   }): Promise<void> => {
-    const response = await fetch(`${apiClient.defaults.baseURL}/api/members/find-password`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
-    });
+    const response = await fetch(
+      `${apiClient.defaults.baseURL}/api/members/find-password`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
+      }
+    );
 
     if (!response.ok) {
       const errorData = await response.json();
-      throw new Error(errorData.message || '비밀번호 변경에 실패했습니다.');
+      throw new Error(errorData.message || "비밀번호 변경에 실패했습니다.");
     }
   },
 };
@@ -229,7 +247,10 @@ export const memberAPI = {
 // 거래 관련 API 함수들
 export const tradeAPI = {
   // 본인 모든 거래 조회
-  getMyTrades: async (page: number = 0, size: number = 10): Promise<{
+  getMyTrades: async (
+    page: number = 0,
+    size: number = 10
+  ): Promise<{
     content: TradeDto[];
     page: number;
     size: number;
@@ -280,43 +301,54 @@ export interface TradeDetailDto {
 // 관리자 관련 API 함수들
 export const adminAPI = {
   // 전체 회원 목록 조회 (관리자 전용)
-  getAllMembers: async (): Promise<{ data: { content: Array<{
-    id: number;
-    email: string;
-    name: string;
-    role: string;
-    profileUrl?: string;
-    status: string;
-    createdAt: string;
-    modifiedAt?: string;
-    deletedAt?: string;
-  }> } }> => {
-    const response = await apiClient.get('/api/admin/members');
+  getAllMembers: async (): Promise<{
+    data: {
+      content: Array<{
+        id: number;
+        email: string;
+        name: string;
+        role: string;
+        profileUrl?: string;
+        status: string;
+        createdAt: string;
+        modifiedAt?: string;
+        deletedAt?: string;
+      }>;
+    };
+  }> => {
+    const response = await apiClient.get("/api/admin/members");
     return response.data;
   },
 
   // 회원 상세 정보 조회 (관리자 전용)
-  getMemberDetail: async (memberId: number): Promise<{ data: {
-    id: number;
-    email: string;
-    name: string;
-    role: string;
-    profileUrl?: string;
-    status: string;
-    createdAt: string;
-    modifiedAt?: string;
-    deletedAt?: string;
-  } }> => {
+  getMemberDetail: async (
+    memberId: number
+  ): Promise<{
+    data: {
+      id: number;
+      email: string;
+      name: string;
+      role: string;
+      profileUrl?: string;
+      status: string;
+      createdAt: string;
+      modifiedAt?: string;
+      deletedAt?: string;
+    };
+  }> => {
     const response = await apiClient.get(`/api/admin/members/${memberId}`);
     return response.data;
   },
 
   // 회원 정보 수정 (관리자 전용)
-  updateMemberByAdmin: async (memberId: number, data: {
-    name?: string;
-    status?: string;
-    profileUrl?: string | null;
-  }): Promise<void> => {
+  updateMemberByAdmin: async (
+    memberId: number,
+    data: {
+      name?: string;
+      status?: string;
+      profileUrl?: string | null;
+    }
+  ): Promise<void> => {
     await apiClient.patch(`/api/admin/members/${memberId}`, data);
   },
 
@@ -326,48 +358,59 @@ export const adminAPI = {
   },
 
   // 모든 특허 조회 (관리자 전용)
-  getAllPatents: async (): Promise<{ data: { content: Array<{
-    id: number;
-    title: string;
-    description: string;
-    category: string;
-    price: number;
-    status: string;
-    createdAt: string;
-    modifiedAt?: string;
-    favoriteCnt: number;
-    authorId: number;
-    authorName?: string;
-  }> } }> => {
-    const response = await apiClient.get('/api/admin/patents');
+  getAllPatents: async (): Promise<{
+    data: {
+      content: Array<{
+        id: number;
+        title: string;
+        description: string;
+        category: string;
+        price: number;
+        status: string;
+        createdAt: string;
+        modifiedAt?: string;
+        favoriteCnt: number;
+        authorId: number;
+        authorName?: string;
+      }>;
+    };
+  }> => {
+    const response = await apiClient.get("/api/admin/patents");
     return response.data;
   },
 
   // 특허 정보 수정 (관리자 전용)
-  updatePatentByAdmin: async (patentId: number, data: {
-    title?: string;
-    description?: string;
-    category?: string;
-    price?: number;
-    status?: string;
-  }): Promise<void> => {
+  updatePatentByAdmin: async (
+    patentId: number,
+    data: {
+      title?: string;
+      description?: string;
+      category?: string;
+      price?: number;
+      status?: string;
+    }
+  ): Promise<void> => {
     await apiClient.patch(`/api/admin/patents/${patentId}`, data);
   },
 
   // 특허 상세 정보 조회 (관리자 전용)
-  getPatentDetail: async (patentId: number): Promise<{ data: {
-    id: number;
-    title: string;
-    description: string;
-    category: string;
-    price: number;
-    status: string;
-    createdAt: string;
-    modifiedAt?: string;
-    favoriteCnt: number;
-    authorId: number;
-    authorName?: string;
-  } }> => {
+  getPatentDetail: async (
+    patentId: number
+  ): Promise<{
+    data: {
+      id: number;
+      title: string;
+      description: string;
+      category: string;
+      price: number;
+      status: string;
+      createdAt: string;
+      modifiedAt?: string;
+      favoriteCnt: number;
+      authorId: number;
+      authorName?: string;
+    };
+  }> => {
     const response = await apiClient.get(`/api/admin/patents/${patentId}`);
     return response.data;
   },

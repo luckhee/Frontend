@@ -87,14 +87,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       console.log(`채팅방 ${roomId} 메시지 로드 시작`);
 
       const token = getAccessTokenCookie();
-      const response = await fetch(`https://www.devteam10.org/api/chat/rooms/${roomId}/messages`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        credentials: 'include'
-      });
+      const response = await fetch(
+        `http://localhost:8080/api/chat/rooms/${roomId}/messages`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          credentials: "include",
+        }
+      );
 
       if (!response.ok) {
         throw new Error(`메시지 로드 실패: ${response.status}`);
@@ -103,7 +106,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const responseData = await response.json();
       const messages = responseData.data || [];
 
-      console.log(`채팅방 ${roomId} 메시지 로드 완료:`, messages.length, '개');
+      console.log(`채팅방 ${roomId} 메시지 로드 완료:`, messages.length, "개");
       console.log(`첫 번째 메시지 샘플:`, messages[0]);
 
       // 메시지 데이터 변환 - 백엔드에서 오는 형식을 프론트엔드 형식으로 변환
@@ -114,37 +117,38 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         content: msg.content,
         timestamp: msg.timestamp || msg.createdAt || new Date().toISOString(),
         roomId: roomId,
-        senderEmail: msg.senderEmail || '',
-        messageType: msg.messageType || 'NORMAL'
+        senderEmail: msg.senderEmail || "",
+        messageType: msg.messageType || "NORMAL",
       }));
 
       console.log(`변환된 첫 번째 메시지:`, transformedMessages[0]);
 
       // 방별 메시지 저장
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         messagesByRoom: {
           ...prev.messagesByRoom,
-          [roomId]: transformedMessages
-        }
+          [roomId]: transformedMessages,
+        },
       }));
-
     } catch (error) {
       console.error(`채팅방 ${roomId} 메시지 로드 실패:`, error);
       // 실패해도 빈 배열로 초기화
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         messagesByRoom: {
           ...prev.messagesByRoom,
-          [roomId]: []
-        }
+          [roomId]: [],
+        },
       }));
     }
   }, []);
 
   // 현재 방의 메시지를 가져오는 함수
   const getCurrentRoomMessages = useCallback(() => {
-    return state.currentRoom ? state.messagesByRoom[state.currentRoom.id] || [] : [];
+    return state.currentRoom
+      ? state.messagesByRoom[state.currentRoom.id] || []
+      : [];
   }, [state.currentRoom, state.messagesByRoom]);
 
   // 채팅방 목록 새로고침 함수 추가
@@ -158,21 +162,23 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       console.log("채팅방 목록 새로고침 시작");
       const token = getAccessTokenCookie();
       const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       };
 
       if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+        headers["Authorization"] = `Bearer ${token}`;
       }
 
-      const response = await fetch('https://www.devteam10.org/api/chat/rooms/my', {
-        method: 'GET',
+      const response = await fetch("http://localhost:8080/api/chat/rooms/my", {
+        method: "GET",
         headers,
-        credentials: 'include'
+        credentials: "include",
       });
 
       if (!response.ok) {
-        throw new Error(`채팅방 목록을 불러올 수 없습니다. (${response.status})`);
+        throw new Error(
+          `채팅방 목록을 불러올 수 없습니다. (${response.status})`
+        );
       }
 
       const responseData = await response.json();
@@ -184,28 +190,45 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         rooms = roomsData;
       } else if (roomsData && Array.isArray(roomsData.data)) {
         rooms = roomsData.data;
-      } else if (roomsData && roomsData.rooms && Array.isArray(roomsData.rooms)) {
+      } else if (
+        roomsData &&
+        roomsData.rooms &&
+        Array.isArray(roomsData.rooms)
+      ) {
         rooms = roomsData.rooms;
       }
 
-      // 중복 제거
-      const uniqueRooms = rooms.reduce((acc: ChatRoom[], current: ChatRoom) => {
-        const existing = acc.find(room => room.id === current.id);
+      // 백엔드 응답을 ChatRoom 형식으로 변환 (백엔드에서 이미 현재 사용자가 참여한 채팅방만 반환)
+      const uniqueRooms = rooms.reduce((acc: ChatRoom[], current: any) => {
+        const existing = acc.find((room) => room.id === current.id);
         if (!existing) {
-          acc.push(current);
+          // 백엔드 DTO를 프론트엔드 ChatRoom 형식으로 변환
+          const chatRoom: ChatRoom = {
+            id: current.id,
+            name: current.name || current.roomName || `채팅방 ${current.id}`,
+            participants: current.participants || [],
+          };
+          acc.push(chatRoom);
+          console.log(
+            `✅ 채팅방 ${chatRoom.id} 추가됨 (이름: ${chatRoom.name}, 참여자: ${chatRoom.participants.join(", ") || "없음"})`
+          );
         }
         return acc;
       }, []);
 
-      console.log("새로고침된 채팅방 목록:", uniqueRooms);
+      console.log(
+        `새로고침된 채팅방 목록 (필터링 후): ${uniqueRooms.length}개`,
+        uniqueRooms
+      );
+      console.log(`현재 사용자: ${user.email}`);
 
       // 기존 구독 중인 채팅방 ID들
-      const existingRoomIds = state.rooms.map(room => room.id);
+      const existingRoomIds = state.rooms.map((room) => room.id);
 
       // 상태 업데이트
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
-        rooms: uniqueRooms
+        rooms: uniqueRooms,
       }));
 
       // 새로운 채팅방들을 WebSocket에 구독
@@ -214,43 +237,61 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (!existingRoomIds.includes(room.id)) {
           console.log(`새 채팅방 ${room.id} WebSocket 구독 시작`);
           webSocketService.subscribeToChatRoom(room.id, (message) => {
-            const messageRoomId = message.roomId || message.chatRoomId || room.id;
-            setState(prevState => {
+            const messageRoomId =
+              message.roomId || message.chatRoomId || room.id;
+            setState((prevState) => {
               // 나가기 알림 메시지인 경우 처리
               if (message.messageType === "LEAVE_NOTIFICATION") {
-                console.log(`⚠️ 채팅방 ${messageRoomId} 나가기 알림 수신:`, message.content);
+                console.log(
+                  `⚠️ 채팅방 ${messageRoomId} 나가기 알림 수신:`,
+                  message.content
+                );
 
                 return {
                   ...prevState,
                   messagesByRoom: {
                     ...prevState.messagesByRoom,
-                    [messageRoomId]: [...(prevState.messagesByRoom[messageRoomId] || []), message]
+                    [messageRoomId]: [
+                      ...(prevState.messagesByRoom[messageRoomId] || []),
+                      message,
+                    ],
                   },
                   // 채팅방을 비활성화 상태로 표시
                   inactiveRooms: {
                     ...prevState.inactiveRooms,
-                    [messageRoomId]: true
-                  }
+                    [messageRoomId]: true,
+                  },
                 };
               }
 
               // 일반 메시지 처리
-              const shouldIncrementUnread = prevState.currentRoom?.id !== messageRoomId;
+              const shouldIncrementUnread =
+                prevState.currentRoom?.id !== messageRoomId;
 
               if (shouldIncrementUnread) {
-                console.log(`방 ${messageRoomId} 읽지 않은 메시지 수: ${(prevState.unreadCounts[messageRoomId] || 0)} → ${(prevState.unreadCounts[messageRoomId] || 0) + 1}`);
+                console.log(
+                  `방 ${messageRoomId} 읽지 않은 메시지 수: ${
+                    prevState.unreadCounts[messageRoomId] || 0
+                  } → ${(prevState.unreadCounts[messageRoomId] || 0) + 1}`
+                );
               }
 
               return {
                 ...prevState,
                 messagesByRoom: {
                   ...prevState.messagesByRoom,
-                  [messageRoomId]: [...(prevState.messagesByRoom[messageRoomId] || []), message]
+                  [messageRoomId]: [
+                    ...(prevState.messagesByRoom[messageRoomId] || []),
+                    message,
+                  ],
                 },
-                unreadCounts: shouldIncrementUnread ? {
-                  ...prevState.unreadCounts,
-                  [messageRoomId]: (prevState.unreadCounts[messageRoomId] || 0) + 1
-                } : prevState.unreadCounts
+                unreadCounts: shouldIncrementUnread
+                  ? {
+                      ...prevState.unreadCounts,
+                      [messageRoomId]:
+                        (prevState.unreadCounts[messageRoomId] || 0) + 1,
+                    }
+                  : prevState.unreadCounts,
               };
             });
           });
@@ -267,12 +308,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // WebSocket 연결
   const connectToChat = useCallback(async () => {
     if (!user || !isAuthenticated) {
-      setState(prev => ({ ...prev, error: "로그인이 필요합니다." }));
+      setState((prev) => ({ ...prev, error: "로그인이 필요합니다." }));
       return;
     }
 
     try {
-      setState(prev => ({ ...prev, isLoading: true, error: null }));
+      setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
       await webSocketService.connect(user.email);
 
@@ -280,37 +321,47 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const token = getAccessTokenCookie();
       console.log("=== 채팅 연결 디버깅 ===");
       console.log("토큰 존재 여부:", !!token);
-      console.log("토큰 앞 20자:", token ? token.substring(0, 20) + "..." : "없음");
+      console.log(
+        "토큰 앞 20자:",
+        token ? token.substring(0, 20) + "..." : "없음"
+      );
       console.log("사용자 정보:", user);
       console.log("전체 쿠키 문자열:", document.cookie);
-      console.log("accessToken 쿠키 직접 확인:", document.cookie.includes('accessToken'));
+      console.log(
+        "accessToken 쿠키 직접 확인:",
+        document.cookie.includes("accessToken")
+      );
 
       // 모든 쿠키 파싱해서 보기
-      const allCookies = document.cookie.split(';').reduce((cookies, cookie) => {
-        const [name, value] = cookie.split('=').map(c => c.trim());
-        cookies[name] = value;
-        return cookies;
-      }, {} as Record<string, string>);
+      const allCookies = document.cookie
+        .split(";")
+        .reduce((cookies, cookie) => {
+          const [name, value] = cookie.split("=").map((c) => c.trim());
+          cookies[name] = value;
+          return cookies;
+        }, {} as Record<string, string>);
       console.log("파싱된 모든 쿠키:", allCookies);
 
       const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       };
 
       if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+        headers["Authorization"] = `Bearer ${token}`;
       }
 
       console.log("요청 헤더:", headers);
 
-      const response = await fetch('https://www.devteam10.org/api/chat/rooms/my', {
-        method: 'GET',
+      const response = await fetch("http://localhost:8080/api/chat/rooms/my", {
+        method: "GET",
         headers,
-        credentials: 'include' // 쿠키도 함께 전송
+        credentials: "include", // 쿠키도 함께 전송
       });
 
       if (!response.ok) {
-        throw new Error(`채팅방 목록을 불러올 수 없습니다. (${response.status})`);
+        throw new Error(
+          `채팅방 목록을 불러올 수 없습니다. (${response.status})`
+        );
       }
 
       const responseData = await response.json();
@@ -323,104 +374,142 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         rooms = roomsData;
       } else if (roomsData && Array.isArray(roomsData.data)) {
         rooms = roomsData.data;
-      } else if (roomsData && roomsData.rooms && Array.isArray(roomsData.rooms)) {
+      } else if (
+        roomsData &&
+        roomsData.rooms &&
+        Array.isArray(roomsData.rooms)
+      ) {
         rooms = roomsData.rooms;
       } else {
         console.warn("서버에서 받은 데이터가 배열 형태가 아닙니다:", roomsData);
       }
 
-      // 중복 채팅방 제거 (같은 ID를 가진 방이 여러 개 있을 경우)
-      const uniqueRooms = rooms.reduce((acc: ChatRoom[], current: ChatRoom) => {
-        const existing = acc.find(room => room.id === current.id);
+      // 백엔드 응답을 ChatRoom 형식으로 변환 (백엔드에서 이미 현재 사용자가 참여한 채팅방만 반환)
+      const uniqueRooms = rooms.reduce((acc: ChatRoom[], current: any) => {
+        const existing = acc.find((room) => room.id === current.id);
         if (!existing) {
-          acc.push(current);
+          // 백엔드 DTO를 프론트엔드 ChatRoom 형식으로 변환
+          const chatRoom: ChatRoom = {
+            id: current.id,
+            name: current.name || current.roomName || `채팅방 ${current.id}`,
+            participants: current.participants || [],
+          };
+          acc.push(chatRoom);
+          console.log(
+            `✅ 채팅방 ${chatRoom.id} 추가됨 (이름: ${chatRoom.name}, 참여자: ${chatRoom.participants.join(", ") || "없음"})`
+          );
         } else {
           console.warn(`중복된 채팅방 ID 발견: ${current.id}, 기존 방 유지`);
         }
         return acc;
       }, []);
 
-      console.log("중복 제거 후 채팅방 목록:", uniqueRooms);
+      console.log(
+        `중복 제거 및 필터링 후 채팅방 목록: ${uniqueRooms.length}개`,
+        uniqueRooms
+      );
+      console.log(`현재 사용자: ${user.email}`);
 
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         isConnected: true,
         isLoading: false,
-        rooms: uniqueRooms
+        rooms: uniqueRooms,
       }));
 
       console.log("=== 모든 채팅방 구독 시작 ===");
       uniqueRooms.forEach((room: ChatRoom) => {
-        webSocketService.subscribeToChatRoom(room.id, (rawMessage: RawWebSocketMessage) => {
+        webSocketService.subscribeToChatRoom(
+          room.id,
+          (rawMessage: RawWebSocketMessage) => {
+            // 메시지 변환
+            const message: ChatMessage = {
+              id: rawMessage.id
+                ? String(rawMessage.id)
+                : String(Date.now() + Math.random()),
+              senderId: String(rawMessage.senderId), // 문자열로 변환
+              senderName: rawMessage.senderName,
+              content: rawMessage.content,
+              timestamp: rawMessage.timestamp || new Date().toISOString(),
+              roomId: rawMessage.roomId || rawMessage.chatRoomId || room.id,
+              senderEmail: rawMessage.senderEmail || "",
+              messageType: rawMessage.messageType || "NORMAL",
+            };
 
-          // 메시지 변환
-          const message: ChatMessage = {
-            id: rawMessage.id ? String(rawMessage.id) : String(Date.now() + Math.random()),
-            senderId: String(rawMessage.senderId), // 문자열로 변환
-            senderName: rawMessage.senderName,
-            content: rawMessage.content,
-            timestamp: rawMessage.timestamp || new Date().toISOString(),
-            roomId: rawMessage.roomId || rawMessage.chatRoomId || room.id,
-            senderEmail: rawMessage.senderEmail || '',
-            messageType: rawMessage.messageType || 'NORMAL'
-          };
+            console.log(`채팅방 ${room.id}에서 변환된 메시지:`, message);
 
-          console.log(`채팅방 ${room.id}에서 변환된 메시지:`, message);
+            // roomId가 없으면 현재 구독중인 방 ID를 사용
+            const messageRoomId = message.roomId;
 
-          // roomId가 없으면 현재 구독중인 방 ID를 사용
-          const messageRoomId = message.roomId;
+            setState((prevState) => {
+              // 나가기 알림 메시지인 경우 처리
+              if (message.messageType === "LEAVE_NOTIFICATION") {
+                console.log(
+                  `⚠️ 채팅방 ${messageRoomId} 나가기 알림 수신:`,
+                  message.content
+                );
 
-          setState(prevState => {
-            // 나가기 알림 메시지인 경우 처리
-            if (message.messageType === "LEAVE_NOTIFICATION") {
-              console.log(`⚠️ 채팅방 ${messageRoomId} 나가기 알림 수신:`, message.content);
+                return {
+                  ...prevState,
+                  messagesByRoom: {
+                    ...prevState.messagesByRoom,
+                    [messageRoomId]: [
+                      ...(prevState.messagesByRoom[messageRoomId] || []),
+                      message,
+                    ],
+                  },
+                  // 채팅방을 비활성화 상태로 표시
+                  inactiveRooms: {
+                    ...prevState.inactiveRooms,
+                    [messageRoomId]: true,
+                  },
+                };
+              }
+
+              // 일반 메시지 처리
+              const shouldIncrementUnread =
+                prevState.currentRoom?.id !== messageRoomId;
+
+              if (shouldIncrementUnread) {
+                console.log(
+                  `방 ${messageRoomId} 읽지 않은 메시지 수: ${
+                    prevState.unreadCounts[messageRoomId] || 0
+                  } → ${(prevState.unreadCounts[messageRoomId] || 0) + 1}`
+                );
+              }
 
               return {
                 ...prevState,
                 messagesByRoom: {
                   ...prevState.messagesByRoom,
-                  [messageRoomId]: [...(prevState.messagesByRoom[messageRoomId] || []), message]
+                  [messageRoomId]: [
+                    ...(prevState.messagesByRoom[messageRoomId] || []),
+                    message,
+                  ],
                 },
-                // 채팅방을 비활성화 상태로 표시
-                inactiveRooms: {
-                  ...prevState.inactiveRooms,
-                  [messageRoomId]: true
-                }
+                // 다른 방의 메시지면 읽지 않은 메시지 수 증가
+                unreadCounts: shouldIncrementUnread
+                  ? {
+                      ...prevState.unreadCounts,
+                      [messageRoomId]:
+                        (prevState.unreadCounts[messageRoomId] || 0) + 1,
+                    }
+                  : prevState.unreadCounts,
               };
-            }
-
-            // 일반 메시지 처리
-            const shouldIncrementUnread = prevState.currentRoom?.id !== messageRoomId;
-
-            if (shouldIncrementUnread) {
-              console.log(`방 ${messageRoomId} 읽지 않은 메시지 수: ${(prevState.unreadCounts[messageRoomId] || 0)} → ${(prevState.unreadCounts[messageRoomId] || 0) + 1}`);
-            }
-
-            return {
-              ...prevState,
-              messagesByRoom: {
-                ...prevState.messagesByRoom,
-                [messageRoomId]: [...(prevState.messagesByRoom[messageRoomId] || []), message]
-              },
-              // 다른 방의 메시지면 읽지 않은 메시지 수 증가
-              unreadCounts: shouldIncrementUnread ? {
-                ...prevState.unreadCounts,
-                [messageRoomId]: (prevState.unreadCounts[messageRoomId] || 0) + 1
-              } : prevState.unreadCounts
-            };
-          });
-        });
+            });
+          }
+        );
       });
       console.log(`총 ${uniqueRooms.length}개 채팅방 구독 완료`);
 
       console.log("채팅 연결 완료");
     } catch (error) {
       console.error("채팅 연결 실패:", error);
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         error: error instanceof Error ? error.message : "연결 실패",
         isLoading: false,
-        isConnected: false
+        isConnected: false,
       }));
     }
   }, [user, isAuthenticated]);
@@ -444,133 +533,194 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     } else {
       console.log("연결 중이므로 대기");
     }
-  }, [isAuthenticated, user, state.isConnected, state.isLoading, connectToChat]);
+  }, [
+    isAuthenticated,
+    user,
+    state.isConnected,
+    state.isLoading,
+    connectToChat,
+  ]);
 
   // 채팅 페이지 접속 시 자동 WebSocket 연결
   useEffect(() => {
-    if (isAuthenticated && user && !state.isConnected && !state.isLoading && !state.error) {
+    if (
+      isAuthenticated &&
+      user &&
+      !state.isConnected &&
+      !state.isLoading &&
+      !state.error
+    ) {
       console.log("채팅 페이지 접속 - 자동 연결 시도");
       connectToChat();
     }
-  }, [isAuthenticated, user, state.isConnected, state.isLoading, state.error, connectToChat]);
+  }, [
+    isAuthenticated,
+    user,
+    state.isConnected,
+    state.isLoading,
+    state.error,
+    connectToChat,
+  ]);
 
   // WebSocket 연결 해제
   const disconnectFromChat = useCallback(() => {
     console.log("=== 채팅 연결 해제 ===");
     webSocketService.disconnect();
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
       isConnected: false,
       currentRoom: null,
       messagesByRoom: {}, // 모든 메시지 캐시 초기화
-      inactiveRooms: {} // 비활성화 상태도 초기화
+      inactiveRooms: {}, // 비활성화 상태도 초기화
     }));
   }, []);
 
   //  채팅방 선택 - 구독은 이미 되어있으니 currentRoom만 변경
-  const selectRoom = useCallback(async (room: ChatRoom) => {
-    console.log("selectRoom 호출:", room.name, "ID:", room.id);
+  const selectRoom = useCallback(
+    async (room: ChatRoom) => {
+      console.log("selectRoom 호출:", room.name, "ID:", room.id);
 
-    // 연결 상태 체크
-    if (!state.isConnected) {
-      console.error("WebSocket이 연결되지 않았습니다.");
-      return;
-    }
-
-    // 같은 방 체크
-    if (state.currentRoom && state.currentRoom.id === room.id) {
-      console.log("이미 선택된 방입니다.");
-      return;
-    }
-
-    console.log(`채팅방 선택: ${room.name} (ID: ${room.id})`);
-
-    // 상태 업데이트
-    setState(prev => ({
-      ...prev,
-      currentRoom: room,
-      unreadCounts: {
-        ...prev.unreadCounts,
-        [room.id]: 0 // 선택한 방의 읽지 않은 메시지 수를 0으로 초기화
+      // 연결 상태 체크
+      if (!state.isConnected) {
+        console.error("WebSocket이 연결되지 않았습니다.");
+        return;
       }
-    }));
 
-    // 해당 방의 메시지가 없으면 로드
-    if (!state.messagesByRoom[room.id]) {
-      console.log(`채팅방 ${room.id} 메시지 히스토리 로드 시작`);
-      await loadChatRoomMessages(room.id);
-    } else {
-      console.log(`채팅방 ${room.id} 메시지 캐시 존재 (${state.messagesByRoom[room.id].length}개)`);
-    }
+      // 같은 방 체크
+      if (state.currentRoom && state.currentRoom.id === room.id) {
+        console.log("이미 선택된 방입니다.");
+        return;
+      }
 
-  }, [state.isConnected, state.currentRoom, state.messagesByRoom, loadChatRoomMessages]);
+      console.log(`채팅방 선택: ${room.name} (ID: ${room.id})`);
+
+      // 상태 업데이트
+      setState((prev) => ({
+        ...prev,
+        currentRoom: room,
+        unreadCounts: {
+          ...prev.unreadCounts,
+          [room.id]: 0, // 선택한 방의 읽지 않은 메시지 수를 0으로 초기화
+        },
+      }));
+
+      // 해당 방의 메시지가 없으면 로드
+      if (!state.messagesByRoom[room.id]) {
+        console.log(`채팅방 ${room.id} 메시지 히스토리 로드 시작`);
+        await loadChatRoomMessages(room.id);
+      } else {
+        console.log(
+          `채팅방 ${room.id} 메시지 캐시 존재 (${
+            state.messagesByRoom[room.id].length
+          }개)`
+        );
+      }
+    },
+    [
+      state.isConnected,
+      state.currentRoom,
+      state.messagesByRoom,
+      loadChatRoomMessages,
+    ]
+  );
 
   // 메시지 전송 - 방별 메시지에 반영
-  const sendMessage = useCallback(async (content: string) => {
-    console.log("=== ChatContext sendMessage 호출 ===");
-    console.log("content:", content);
-    console.log("user:", user);
+  const sendMessage = useCallback(
+    async (content: string) => {
+      console.log("=== ChatContext sendMessage 호출 ===");
+      console.log("content:", content);
+      console.log("user:", user);
 
-    if (!user) {
-      console.error("❌ 사용자 정보가 없습니다.");
-      throw new Error("사용자 정보가 없습니다.");
-    }
+      if (!user) {
+        console.error("❌ 사용자 정보가 없습니다.");
+        throw new Error("사용자 정보가 없습니다.");
+      }
 
-    // state를 직접 읽어서 조건 확인
-    if (!state.currentRoom || !state.isConnected) {
-      console.error("❌ 메시지 전송 조건이 맞지 않습니다.");
-      console.error("currentRoom:", state.currentRoom);
-      console.error("isConnected:", state.isConnected);
-      throw new Error("메시지 전송 조건이 맞지 않습니다.");
-    }
+      // state를 직접 읽어서 조건 확인
+      if (!state.currentRoom || !state.isConnected) {
+        console.error("❌ 메시지 전송 조건이 맞지 않습니다.");
+        console.error("currentRoom:", state.currentRoom);
+        console.error("isConnected:", state.isConnected);
+        throw new Error("메시지 전송 조건이 맞지 않습니다.");
+      }
 
-    try {
-      const message: Omit<ChatMessage, "id" | "timestamp"> = {
-        senderId: String(user.id), // 문자열로 변환하여 일관성 확보
-        senderName: user.name,
-        content,
-        senderEmail: user.email,
-        roomId: state.currentRoom.id,
-      };
+      try {
+        const message: Omit<ChatMessage, "id" | "timestamp"> = {
+          senderId: String(user.id), // 문자열로 변환하여 일관성 확보
+          senderName: user.name,
+          content,
+          senderEmail: user.email,
+          roomId: state.currentRoom.id,
+        };
 
-      console.log("생성된 message 객체:", message);
+        console.log("생성된 message 객체:", message);
 
-      // WebSocket으로 메시지 전송 (백엔드에서 저장 및 분배 처리)
-      console.log("webSocketService.sendMessage 호출...");
-      webSocketService.sendMessage(state.currentRoom.id, message);
+        // WebSocket으로 메시지 전송 (백엔드에서 저장 및 분배 처리)
+        console.log("webSocketService.sendMessage 호출...");
+        console.log(
+          "현재 WebSocket 연결 상태:",
+          webSocketService.isWebSocketConnected()
+        );
+        console.log(
+          "현재 구독된 채팅방 목록:",
+          webSocketService.getSubscribedRoomIds()
+        );
+        console.log("현재 선택된 방 ID:", state.currentRoom.id);
+        console.log(
+          "현재 방이 구독되어 있는지:",
+          webSocketService.getSubscribedRoomIds().includes(state.currentRoom.id)
+        );
 
-      console.log("✅ 메시지 전송 완료");
-    } catch (error) {
-      console.error("❌ 메시지 전송 실패:", error);
-      throw error;
-    }
-  }, [user, state.currentRoom, state.isConnected]);
+        try {
+          webSocketService.sendMessage(state.currentRoom.id, message);
+          console.log("✅ 메시지 전송 완료");
+          console.log(
+            `백엔드에서 /sub/chat/${state.currentRoom.id}로 브로드캐스트해야 합니다.`
+          );
+        } catch (wsError) {
+          console.error("❌ WebSocket 메시지 전송 실패:", wsError);
+          throw new Error(
+            `메시지 전송 실패: ${
+              wsError instanceof Error ? wsError.message : String(wsError)
+            }`
+          );
+        }
+      } catch (error) {
+        console.error("❌ 메시지 전송 실패:", error);
+        throw error;
+      }
+    },
+    [user, state.currentRoom, state.isConnected]
+  );
 
   // 채팅방 생성
-  const createRoom = useCallback(async (roomName: string, participants: string[]) => {
-    try {
-      console.log(`채팅방 생성 시작: ${roomName}`, participants);
+  const createRoom = useCallback(
+    async (roomName: string, participants: string[]) => {
+      try {
+        console.log(`채팅방 생성 시작: ${roomName}`, participants);
 
-      // 서버에 채팅방 생성 요청
-      const newRoom = await chatAPI.createChatRoom({
-        name: roomName,
-        participants: participants,
-      });
+        // 서버에 채팅방 생성 요청
+        const newRoom = await chatAPI.createChatRoom({
+          name: roomName,
+          participants: participants,
+        });
 
-      console.log('새 채팅방 생성 완료:', newRoom);
+        console.log("새 채팅방 생성 완료:", newRoom);
 
-      // 채팅방 목록 새로고침
-      await refreshChatRooms();
+        // 채팅방 목록 새로고침
+        await refreshChatRooms();
 
-      // 새로 생성된 방 선택
-      selectRoom(newRoom);
+        // 새로 생성된 방 선택
+        selectRoom(newRoom);
 
-      return newRoom;
-    } catch (error) {
-      console.error('채팅방 생성 실패:', error);
-      throw error;
-    }
-  }, [refreshChatRooms, selectRoom]);
+        return newRoom;
+      } catch (error) {
+        console.error("채팅방 생성 실패:", error);
+        throw error;
+      }
+    },
+    [refreshChatRooms, selectRoom]
+  );
 
   // 테스트용 방 생성
   const createTestRoom = useCallback(() => {
@@ -579,74 +729,90 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const newRoom: ChatRoom = {
       id: Date.now(), // 임시 ID, 실제로는 서버에서 생성된 ID 사용
       name: `새 채팅방 ${new Date().toLocaleTimeString()}`,
-      participants: [user.email]
+      participants: [user.email],
     };
 
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
-      rooms: [...prev.rooms, newRoom]
+      rooms: [...prev.rooms, newRoom],
     }));
   }, [user]);
 
   // 읽지 않은 메시지 수 관리 함수들
   const markRoomAsRead = useCallback((roomId: number) => {
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
       unreadCounts: {
         ...prev.unreadCounts,
-        [roomId]: 0
-      }
+        [roomId]: 0,
+      },
     }));
   }, []);
 
-  const getUnreadCount = useCallback((roomId: number) => {
-    return state.unreadCounts[roomId] || 0;
-  }, [state.unreadCounts]);
+  const getUnreadCount = useCallback(
+    (roomId: number) => {
+      return state.unreadCounts[roomId] || 0;
+    },
+    [state.unreadCounts]
+  );
 
   // 채팅방 비활성화 상태 확인
-  const isRoomInactive = useCallback((roomId: number) => {
-    return state.inactiveRooms[roomId] || false;
-  }, [state.inactiveRooms]);
+  const isRoomInactive = useCallback(
+    (roomId: number) => {
+      return state.inactiveRooms[roomId] || false;
+    },
+    [state.inactiveRooms]
+  );
 
   // 채팅방 삭제
-  const deleteChatRoom = useCallback(async (roomId: number) => {
-    try {
-      console.log(`채팅방 삭제 시작: ${roomId}`);
+  const deleteChatRoom = useCallback(
+    async (roomId: number) => {
+      try {
+        console.log(`채팅방 삭제 시작: ${roomId}`);
 
-      // 현재 선택된 방이 삭제되는 방인 경우 구독 해제
-      if (state.currentRoom && state.currentRoom.id === roomId) {
-        webSocketService.unsubscribeFromChatRoom(roomId);
+        // 현재 선택된 방이 삭제되는 방인 경우 구독 해제
+        if (state.currentRoom && state.currentRoom.id === roomId) {
+          webSocketService.unsubscribeFromChatRoom(roomId);
+        }
+
+        // 서버에 삭제 요청
+        await chatAPI.deleteChatRoom(roomId);
+
+        // 로컬 상태에서 채팅방 제거
+        setState((prev) => ({
+          ...prev,
+          rooms: prev.rooms.filter((room) => room.id !== roomId),
+          // 현재 방이 삭제된 방이면 null로 설정
+          currentRoom:
+            prev.currentRoom?.id === roomId ? null : prev.currentRoom,
+          // 해당 방의 메시지도 제거
+          messagesByRoom: Object.fromEntries(
+            Object.entries(prev.messagesByRoom).filter(
+              ([id]) => Number(id) !== roomId
+            )
+          ),
+          // 해당 방의 읽지 않은 메시지 수도 제거
+          unreadCounts: Object.fromEntries(
+            Object.entries(prev.unreadCounts).filter(
+              ([id]) => Number(id) !== roomId
+            )
+          ),
+          // 해당 방의 비활성화 상태도 제거
+          inactiveRooms: Object.fromEntries(
+            Object.entries(prev.inactiveRooms).filter(
+              ([id]) => Number(id) !== roomId
+            )
+          ),
+        }));
+
+        console.log(`채팅방 삭제 완료: ${roomId}`);
+      } catch (error) {
+        console.error("채팅방 삭제 실패:", error);
+        throw error;
       }
-
-      // 서버에 삭제 요청
-      await chatAPI.deleteChatRoom(roomId);
-
-      // 로컬 상태에서 채팅방 제거
-      setState(prev => ({
-        ...prev,
-        rooms: prev.rooms.filter(room => room.id !== roomId),
-        // 현재 방이 삭제된 방이면 null로 설정
-        currentRoom: prev.currentRoom?.id === roomId ? null : prev.currentRoom,
-        // 해당 방의 메시지도 제거
-        messagesByRoom: Object.fromEntries(
-          Object.entries(prev.messagesByRoom).filter(([id]) => Number(id) !== roomId)
-        ),
-        // 해당 방의 읽지 않은 메시지 수도 제거
-        unreadCounts: Object.fromEntries(
-          Object.entries(prev.unreadCounts).filter(([id]) => Number(id) !== roomId)
-        ),
-        // 해당 방의 비활성화 상태도 제거
-        inactiveRooms: Object.fromEntries(
-          Object.entries(prev.inactiveRooms).filter(([id]) => Number(id) !== roomId)
-        )
-      }));
-
-      console.log(`채팅방 삭제 완료: ${roomId}`);
-    } catch (error) {
-      console.error('채팅방 삭제 실패:', error);
-      throw error;
-    }
-  }, [state.currentRoom]);
+    },
+    [state.currentRoom]
+  );
 
   // 컴포넌트 언마운트 시 연결 해제
   useEffect(() => {
