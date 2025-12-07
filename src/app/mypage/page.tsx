@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import apiClient from "@/utils/apiClient";
+import { useChat } from "@/contexts/ChatContext";
 import TradeHistory from "@/components/trade/TradeHistory";
 import TradeDetail from "@/components/trade/TradeDetail";
 
@@ -36,11 +37,15 @@ interface Trade {
 
 export default function MyPage() {
   const { user, isAuthenticated, loading, refreshUserInfo, userUpdateTimestamp, accessToken } = useAuth();
+  const { ensureConnected, refreshChatRooms } = useChat();
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [selectedTradeId, setSelectedTradeId] = useState<number | null>(null);
+  const [isCreatingRoom, setIsCreatingRoom] = useState<{ [key: number]: boolean }>({});
+  const [isDeleting, setIsDeleting] = useState<{ [key: number]: boolean }>({});
+  const [isUnliking, setIsUnliking] = useState<{ [key: number]: boolean }>({});
 
   const [myPatents, setMyPatents] = useState<PostListDTO[]>([]);
   const [likedPatents, setLikedPatents] = useState<PostListDTO[]>([]);
@@ -316,8 +321,34 @@ export default function MyPage() {
                       </span>
                     </div>
                     <div className="flex gap-2">
-                      <button className="text-purple-600 hover:text-purple-700 text-sm">수정</button>
-                      <button className="text-red-600 hover:text-red-700 text-sm">삭제</button>
+                      <button 
+                        onClick={() => router.push(`/patents/${patent.id}/edit`)}
+                        className="text-purple-600 hover:text-purple-700 text-sm cursor-pointer"
+                      >
+                        수정
+                      </button>
+                      <button 
+                        onClick={async () => {
+                          if (!confirm("정말 삭제하시겠습니까?")) return;
+                          setIsDeleting(prev => ({ ...prev, [patent.id]: true }));
+                          try {
+                            await apiClient.delete(`/api/posts/${patent.id}`);
+                            alert("게시글이 삭제되었습니다.");
+                            // 목록 새로고침
+                            const response = await apiClient.get<{data: PostListDTO[]}>('/api/posts/me');
+                            setMyPatents(response.data.data || response.data || []);
+                          } catch (error) {
+                            console.error("삭제 실패:", error);
+                            alert("게시글 삭제에 실패했습니다.");
+                          } finally {
+                            setIsDeleting(prev => ({ ...prev, [patent.id]: false }));
+                          }
+                        }}
+                        disabled={isDeleting[patent.id]}
+                        className="text-red-600 hover:text-red-700 text-sm cursor-pointer disabled:opacity-50"
+                      >
+                        {isDeleting[patent.id] ? "삭제 중..." : "삭제"}
+                      </button>
                     </div>
                   </div>
                 ))
@@ -365,8 +396,131 @@ export default function MyPage() {
                       </span>
                     </div>
                     <div className="flex gap-2">
-                      <button className="text-purple-600 hover:text-purple-700 text-sm">구매문의</button>
-                      <button className="text-red-600 hover:text-red-700 text-sm">찜해제</button>
+                      <button 
+                        onClick={async () => {
+                          if (!isAuthenticated) {
+                            alert("로그인이 필요합니다.");
+                            router.push("/login");
+                            return;
+                          }
+
+                          if (isCreatingRoom[patent.id]) {
+                            return;
+                          }
+
+                          setIsCreatingRoom(prev => ({ ...prev, [patent.id]: true }));
+
+                          try {
+                            await ensureConnected();
+                            const response = await apiClient.post(`/api/chat/rooms/${patent.id}`);
+
+                            if (response.data.resultCode === "200") {
+                              const chatRoomId = response.data.data;
+                              try {
+                                await refreshChatRooms();
+                                setTimeout(() => {
+                                  router.push(`/chat?roomId=${chatRoomId}`);
+                                }, 500);
+                              } catch (refreshError) {
+                                router.push(`/chat?roomId=${chatRoomId}`);
+                              }
+                            } else {
+                              alert("채팅방 생성에 실패했습니다.");
+                            }
+                          } catch (error: unknown) {
+                            console.error("채팅방 생성 실패:", error);
+                            if (
+                              typeof error === "object" &&
+                              error !== null &&
+                              "response" in error &&
+                              typeof (error as { response?: { data?: { msg?: string } } }).response
+                                ?.data?.msg === "string" &&
+                              (
+                                error as { response?: { data?: { msg?: string } } }
+                              ).response!.data!.msg!.includes("이미 존재")
+                            ) {
+                              try {
+                                const roomsResponse = await apiClient.get("/api/chat/rooms/my");
+                                const roomsData =
+                                  roomsResponse.data?.data || roomsResponse.data || [];
+                                const rooms = Array.isArray(roomsData) ? roomsData : [];
+
+                                if (rooms && rooms.length > 0) {
+                                  const existingRoom = rooms.find(
+                                    (room: { postId: number }) => room.postId === patent.id
+                                  );
+                                  if (existingRoom) {
+                                    setTimeout(() => {
+                                      router.push(`/chat?roomId=${existingRoom.id}`);
+                                    }, 300);
+                                  } else {
+                                    alert(
+                                      "관련 채팅방을 찾을 수 없습니다. 새로운 채팅방을 다시 시도해주세요."
+                                    );
+                                  }
+                                } else {
+                                  alert("채팅방을 찾을 수 없습니다.");
+                                }
+                              } catch (findError) {
+                                console.error("채팅방 조회 실패:", findError);
+                                alert("채팅방 생성에 실패했습니다.");
+                              }
+                            } else {
+                              alert("채팅방 생성에 실패했습니다.");
+                            }
+                          } finally {
+                            setIsCreatingRoom(prev => ({ ...prev, [patent.id]: false }));
+                          }
+                        }}
+                        disabled={isCreatingRoom[patent.id]}
+                        className="text-purple-600 hover:text-purple-700 text-sm cursor-pointer disabled:opacity-50"
+                      >
+                        {isCreatingRoom[patent.id] ? "처리 중..." : "구매문의"}
+                      </button>
+                      <button 
+                        onClick={async () => {
+                          if (isUnliking[patent.id]) return;
+                          setIsUnliking(prev => ({ ...prev, [patent.id]: true }));
+                          try {
+                            const endpoint = `/api/likes/${patent.id}`;
+                            let response;
+                            try {
+                              response = await apiClient.delete(endpoint);
+                            } catch (deleteError: unknown) {
+                              if (
+                                deleteError &&
+                                typeof deleteError === "object" &&
+                                "response" in deleteError
+                              ) {
+                                const axiosError = deleteError as {
+                                  response?: { status?: number };
+                                };
+                                if (axiosError.response?.status === 405) {
+                                  response = await apiClient.post(endpoint);
+                                } else {
+                                  throw deleteError;
+                                }
+                              } else {
+                                throw deleteError;
+                              }
+                            }
+
+                            if (response.status === 200 || response.status === 201) {
+                              // 목록에서 제거
+                              setLikedPatents(prev => prev.filter(p => p.id !== patent.id));
+                            }
+                          } catch (error: unknown) {
+                            console.error("찜해제 오류:", error);
+                            alert("찜해제 처리 중 오류가 발생했습니다. 다시 시도해주세요.");
+                          } finally {
+                            setIsUnliking(prev => ({ ...prev, [patent.id]: false }));
+                          }
+                        }}
+                        disabled={isUnliking[patent.id]}
+                        className="text-red-600 hover:text-red-700 text-sm cursor-pointer disabled:opacity-50"
+                      >
+                        {isUnliking[patent.id] ? "처리 중..." : "찜해제"}
+                      </button>
                     </div>
                   </div>
                 ))

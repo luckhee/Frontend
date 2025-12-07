@@ -5,6 +5,7 @@ import apiClient from "@/utils/apiClient";
 import { useAuth } from "@/contexts/AuthContext";
 import Link from "next/link";
 import Image from "next/image";
+import { useSearchParams } from "next/navigation";
 
 interface Post {
   id: number;
@@ -47,6 +48,7 @@ const getFullImageUrl = (url?: string): string | undefined => {
 
 export default function PatentsPage() {
   const { isAuthenticated } = useAuth();
+  const searchParams = useSearchParams();
   const [posts, setPosts] = useState<Post[]>([]);
   const [popularPosts, setPopularPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,32 +65,61 @@ export default function PatentsPage() {
           apiClient.get('/api/posts/popular'),
           apiClient.get('/api/posts')
         ]);
-        // 인기글
-        const popularData = (popularRes.data.data || []).map((post: Post) => ({
-          ...post,
-          imageUrl: getFullImageUrl(post.imageUrl),
-          isLiked: post.isLiked ?? false
-        }));
-        setPopularPosts(popularData.slice(0, 10));
-        // 최신글
-        const postsWithFullImageUrl = (recentRes.data.data || recentRes.data).map((post: Post) => ({
-          ...post,
-          imageUrl: getFullImageUrl(post.imageUrl),
-          isLiked: post.isLiked ?? false
-        }));
-        setPosts(postsWithFullImageUrl);
+        
+        // 인기글 처리
+        const popularDataRaw = popularRes.data?.data || popularRes.data || [];
+        if (!Array.isArray(popularDataRaw)) {
+          console.warn("인기 게시글 데이터가 배열이 아닙니다:", popularDataRaw);
+          setPopularPosts([]);
+        } else {
+          const popularData = popularDataRaw.map((post: Post) => ({
+            ...post,
+            imageUrl: getFullImageUrl(post.imageUrl),
+            isLiked: post.isLiked ?? false
+          }));
+          setPopularPosts(popularData.slice(0, 10));
+          console.log(`인기 게시글 로드 완료: ${popularData.length}개 (표시: ${Math.min(popularData.length, 10)}개)`);
+        }
+        
+        // 최신글 처리
+        const recentDataRaw = recentRes.data?.data || recentRes.data || [];
+        if (!Array.isArray(recentDataRaw)) {
+          console.warn("최신 게시글 데이터가 배열이 아닙니다:", recentDataRaw);
+          setPosts([]);
+        } else {
+          const postsWithFullImageUrl = recentDataRaw.map((post: Post) => ({
+            ...post,
+            imageUrl: getFullImageUrl(post.imageUrl),
+            isLiked: post.isLiked ?? false
+          }));
+          setPosts(postsWithFullImageUrl);
+          console.log(`최신 게시글 로드 완료: ${postsWithFullImageUrl.length}개`);
+        }
       } catch (error) {
         if (error instanceof Error) {
           console.error('게시글 목록 조회 실패:', error.message);
         } else {
           console.error('게시글 목록 조회 실패:', error);
         }
+        // 에러 발생 시 빈 배열로 설정
+        setPopularPosts([]);
+        setPosts([]);
       } finally {
         setLoading(false);
       }
     };
     fetchData();
-  }, []);
+
+    // 페이지 포커스 시 데이터 갱신 (특허 등록 후 돌아왔을 때)
+    const handleFocus = () => {
+      fetchData();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [searchParams]); // searchParams가 변경되면 (특허 등록 후 refresh 파라미터가 추가되면) 데이터 갱신
 
   const handleCategoryClick = (category: string) => {
     if (activeTag === category) {
@@ -106,10 +137,35 @@ export default function PatentsPage() {
       return;
     }
     try {
-      // 최신글과 인기글 모두에 반영
-      const method = posts.find(p => p.id === postId)?.isLiked ? 'delete' : 'post';
-      const response = await apiClient[method](`/api/likes/${postId}`);
-      if (response.status === 200) {
+      const endpoint = `/api/likes/${postId}`;
+      const isLiked = posts.find(p => p.id === postId)?.isLiked;
+      let response;
+
+      if (isLiked) {
+        // 찜하기 취소 - DELETE 시도, 실패하면 POST로 토글
+        try {
+          response = await apiClient.delete(endpoint);
+        } catch (deleteError: unknown) {
+          // DELETE가 405 오류를 반환하면 POST로 토글 방식 사용
+          if (deleteError && typeof deleteError === 'object' && 'response' in deleteError) {
+            const axiosError = deleteError as { response?: { status?: number } };
+            if (axiosError.response?.status === 405) {
+              console.log('DELETE 메서드가 지원되지 않습니다. POST로 토글합니다.');
+              response = await apiClient.post(endpoint);
+            } else {
+              throw deleteError;
+            }
+          } else {
+            throw deleteError;
+          }
+        }
+      } else {
+        // 찜하기 등록
+        response = await apiClient.post(endpoint);
+      }
+
+      if (response.status === 200 || response.status === 201) {
+        // 최신글과 인기글 모두에 반영
         setPosts(posts.map(p =>
           p.id === postId
             ? { ...p, isLiked: !p.isLiked, favoriteCnt: p.isLiked ? p.favoriteCnt - 1 : p.favoriteCnt + 1 }
@@ -121,8 +177,14 @@ export default function PatentsPage() {
             : p
         ));
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('찜 토글 오류:', error);
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { status?: number } };
+        if (axiosError.response?.status === 401 || axiosError.response?.status === 403) {
+        alert('로그인이 필요합니다.');
+        window.location.href = '/login';
+      }
     }
   };
 

@@ -79,32 +79,62 @@ export default function PatentRegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // 추가 유효성 검사
+    if (!formData.title.trim()) {
+      alert('제목을 입력해주세요.');
+      return;
+    }
+    if (!formData.category) {
+      alert('기술분야를 선택해주세요.');
+      return;
+    }
+    if (!formData.description.trim()) {
+      alert('내용을 입력해주세요.');
+      return;
+    }
+    if (formData.price <= 0) {
+      alert('가격을 올바르게 입력해주세요.');
+      return;
+    }
+
     try {
       const postResponse = await apiClient.post('/api/posts', formData);
-      const postId = postResponse.data.id;
+      const postId = postResponse.data?.id || postResponse.data?.data?.id;
 
       if (!postId) {
-        throw new Error('특허 등록에 실패했습니다.');
+        throw new Error('특허 등록에 실패했습니다. 응답에 게시글 ID가 없습니다.');
       }
 
+      // 파일 업로드 (실패해도 게시글은 등록됨)
       if (files.length > 0) {
-        const fileFormData = new FormData();
-        files.forEach((file) => {
-          fileFormData.append('files', file);
-        });
+        try {
+          const fileFormData = new FormData();
+          files.forEach((file) => {
+            fileFormData.append('files', file);
+          });
 
-        await apiClient.post(`/api/posts/${postId}/files`, fileFormData, {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        });
+          await apiClient.post(`/api/posts/${postId}/files`, fileFormData, {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+          });
+        } catch (fileError) {
+          console.error('파일 업로드 실패:', fileError);
+          // 파일 업로드 실패해도 게시글은 등록되었으므로 경고만 표시
+          alert('게시글은 등록되었지만 파일 업로드에 실패했습니다. 나중에 수정 페이지에서 다시 업로드해주세요.');
+        }
       }
 
       setIsSubmitted(true);
-      router.push('/patents');
+      // 등록 성공 후 메인페이지로 이동
+      router.push('/');
     } catch (error) {
       console.error('특허 등록 실패:', error);
-      alert('특허 등록에 실패했습니다.');
+      if (error instanceof Error) {
+        alert(`특허 등록에 실패했습니다: ${error.message}`);
+      } else {
+        alert('특허 등록에 실패했습니다. 네트워크 연결을 확인해주세요.');
+      }
     }
   };
 

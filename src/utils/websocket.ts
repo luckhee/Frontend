@@ -9,7 +9,7 @@ export interface ChatMessage {
   timestamp: string;
   roomId: number;
   chatRoomId?: number; // WebSocket에서 사용하는 추가 속성
-  senderEmail : string;
+  senderEmail: string;
   messageType?: string; // 메시지 타입 추가 (일반, 나가기 알림 등)
 }
 
@@ -23,6 +23,9 @@ export interface ChatRoom {
 class WebSocketService {
   private client: Client | null = null;
   private subscriptions: Map<number, StompSubscription> = new Map();
+  private globalMessageSubscription: StompSubscription | null = null; // 전역 메시지 구독
+  private messageHandlers: Map<number, (message: ChatMessage) => void> =
+    new Map(); // 채팅방별 메시지 핸들러
   private isConnected: boolean = false;
 
   // WebSocket 연결
@@ -32,11 +35,21 @@ class WebSocketService {
         console.log("WebSocket 연결 시도...");
 
         this.client = new Client({
-          webSocketFactory: () => new SockJS("https://www.devteam10.org/chat"),
+          webSocketFactory: () => new SockJS("http://localhost:8080/chat"),
           connectHeaders: {
-            "user-email": userEmail
+            "user-email": userEmail,
           },
-          // debug: process.env.NODE_ENV === "development" ? console.log : undefined,
+          debug: (str: string) => {
+            // STOMP 디버그 로그 (중요한 것만 필터링)
+            if (
+              str.includes("SEND") ||
+              str.includes("MESSAGE") ||
+              str.includes("SUBSCRIBE") ||
+              str.includes("ERROR")
+            ) {
+              console.log("🔍 [STOMP Debug]:", str);
+            }
+          },
           reconnectDelay: 0,
           heartbeatIncoming: 4000,
           heartbeatOutgoing: 4000,
@@ -78,11 +91,14 @@ class WebSocketService {
     console.log("현재 구독 중인 채팅방 수:", this.subscriptions.size);
 
     if (this.client) {
-      this.subscriptions.forEach((subscription, roomId) => {
-        console.log(`채팅방 ${roomId} 구독 해제`);
-        subscription.unsubscribe();
-      });
+      // 전역 구독 해제
+      if (this.globalMessageSubscription) {
+        this.globalMessageSubscription.unsubscribe();
+        this.globalMessageSubscription = null;
+      }
+
       this.subscriptions.clear();
+      this.messageHandlers.clear();
       console.log("모든 구독 해제 완료");
 
       this.client.deactivate();
@@ -104,42 +120,79 @@ class WebSocketService {
       return;
     }
 
-    // 기존 구독이 있으면 해제
-    const existingSubscription = this.subscriptions.get(roomId);
-    if (existingSubscription) {
-      console.log(`기존 채팅방 ${roomId} 구독 해제`);
-      existingSubscription.unsubscribe();
-      this.subscriptions.delete(roomId);
+    // 메시지 핸들러 등록
+    this.messageHandlers.set(roomId, onMessage);
+    console.log(`채팅방 ${roomId} 메시지 핸들러 등록 완료`);
+
+    // 전역 구독이 없으면 생성 (백엔드는 /sub/receiveMessage로 모든 메시지를 브로드캐스트)
+    if (!this.globalMessageSubscription) {
+      console.log("전역 메시지 구독 생성: /sub/receiveMessage");
+      this.globalMessageSubscription = this.client.subscribe(
+        `/sub/receiveMessage`,
+        (message) => {
+          console.log(`📨 [전역 구독] 원시 메시지 수신:`, {
+            destination: message.headers.destination,
+            body: message.body,
+          });
+
+          try {
+            const chatMessage: ChatMessage = JSON.parse(message.body);
+            const messageRoomId = chatMessage.roomId || chatMessage.chatRoomId;
+
+            console.log(
+              `✅ 파싱된 메시지 - roomId: ${messageRoomId}`,
+              chatMessage
+            );
+
+            // 해당 채팅방의 핸들러가 있으면 호출
+            if (messageRoomId) {
+              const handler = this.messageHandlers.get(Number(messageRoomId));
+              if (handler) {
+                console.log(`채팅방 ${messageRoomId} 핸들러 호출`);
+                handler(chatMessage);
+              } else {
+                console.log(
+                  `채팅방 ${messageRoomId}에 대한 핸들러가 없습니다. 등록된 핸들러:`,
+                  Array.from(this.messageHandlers.keys())
+                );
+              }
+            } else {
+              console.warn("메시지에 roomId가 없습니다:", chatMessage);
+            }
+          } catch (error) {
+            console.error("❌ 메시지 파싱 에러:", error);
+            console.error("원본 메시지 body:", message.body);
+          }
+        }
+      );
+      console.log("✅ 전역 메시지 구독 완료");
     }
 
-    console.log(`채팅방 ${roomId} 새 구독 생성`);
-    const subscription = this.client.subscribe(
-      `/topic/chat/${roomId}`,
-      (message) => {
-        try {
-          const chatMessage: ChatMessage = JSON.parse(message.body);
-          console.log(`채팅방 ${roomId}에서 메시지 수신:`, chatMessage);
-          onMessage(chatMessage);
-        } catch (error) {
-          console.error("메시지 파싱 에러:", error);
-        }
-      }
+    // 기존 구독 방식과의 호환성을 위해 subscriptions에도 등록 (실제로는 사용하지 않음)
+    this.subscriptions.set(roomId, this.globalMessageSubscription);
+    console.log(
+      `✅ 채팅방 ${roomId} 구독 완료, 총 핸들러 수: ${this.messageHandlers.size}`
     );
 
-    this.subscriptions.set(roomId, subscription);
-    console.log(`✅ 채팅방 ${roomId} 구독 완료, 총 구독 수: ${this.subscriptions.size}`);
-
-    // 현재 구독 중인 채팅방 목록 출력
-    console.log("현재 구독 중인 채팅방들:", Array.from(this.subscriptions.keys()));
+    // 현재 등록된 채팅방 목록 출력
+    console.log(
+      "현재 등록된 채팅방 핸들러들:",
+      Array.from(this.messageHandlers.keys())
+    );
   }
 
   // 채팅방 구독 해제
   public unsubscribeFromChatRoom(roomId: number): void {
-    const subscription = this.subscriptions.get(roomId);
-    if (subscription) {
-      subscription.unsubscribe();
-      this.subscriptions.delete(roomId);
-      console.log(`채팅방 ${roomId} 구독 해제`);
+    // 메시지 핸들러 제거
+    this.messageHandlers.delete(roomId);
+    this.subscriptions.delete(roomId);
+    console.log(`채팅방 ${roomId} 구독 해제`);
+
+    // 모든 핸들러가 제거되면 전역 구독도 해제
+    if (this.messageHandlers.size === 0 && this.globalMessageSubscription) {
+      console.log("모든 핸들러 제거됨 - 전역 구독 해제");
+      this.globalMessageSubscription.unsubscribe();
+      this.globalMessageSubscription = null;
     }
   }
 
@@ -151,14 +204,25 @@ class WebSocketService {
     console.log("=== WebSocket sendMessage 호출 ===");
     console.log("client 상태:", this.client);
     console.log("isConnected:", this.isConnected);
+    console.log("client?.active:", this.client?.active);
     console.log("roomId:", roomId);
     console.log("message:", message);
 
-    if (!this.client || !this.isConnected) {
+    if (!this.client) {
+      console.error("❌ WebSocket 클라이언트가 없습니다.");
+      throw new Error("WebSocket 클라이언트가 초기화되지 않았습니다.");
+    }
+
+    if (!this.isConnected) {
       console.error("❌ WebSocket이 연결되지 않았습니다.");
-      console.error("client:", this.client);
-      console.error("isConnected:", this.isConnected);
-      return;
+      throw new Error(
+        "WebSocket이 연결되지 않았습니다. 먼저 연결을 시도해주세요."
+      );
+    }
+
+    if (!this.client.active) {
+      console.error("❌ STOMP 클라이언트가 활성화되지 않았습니다.");
+      throw new Error("STOMP 클라이언트가 활성화되지 않았습니다.");
     }
 
     // 백엔드 MessageDto 형식에 맞춰서 전송
@@ -167,27 +231,39 @@ class WebSocketService {
       senderName: message.senderName,
       senderEmail: message.senderEmail,
       content: message.content,
-      chatRoomId: roomId
+      chatRoomId: roomId,
     };
 
     console.log("전송할 messageDto:", messageDto);
-    console.log("destination:", `/app/sendMessage`);
+    console.log("destination:", `/pub/receiveMessage`); // 백엔드 @MessageMapping("/receiveMessage")
 
     try {
-      this.client.publish({
-        destination: `/app/sendMessage`, // 백엔드 @MessageMapping과 일치
+      const result = this.client.publish({
+        destination: `/pub/receiveMessage`, // 백엔드 @MessageMapping("/receiveMessage")
         body: JSON.stringify(messageDto),
       });
 
       console.log("✅ 메시지 전송 완료:", messageDto);
+      console.log("publish 결과:", result);
     } catch (error) {
       console.error("❌ 메시지 전송 중 에러:", error);
+      throw error;
     }
   }
 
   // 연결 상태 확인
   public isWebSocketConnected(): boolean {
     return this.isConnected;
+  }
+
+  // 구독 상태 확인 (디버깅용)
+  public getSubscriptions(): Map<number, StompSubscription> {
+    return this.subscriptions;
+  }
+
+  // 구독된 채팅방 목록 확인 (디버깅용)
+  public getSubscribedRoomIds(): number[] {
+    return Array.from(this.subscriptions.keys());
   }
 }
 
